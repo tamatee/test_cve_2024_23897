@@ -2,48 +2,64 @@ pipeline {
     agent any
     
     environment {
-        // กำหนด path ตามที่คุณต้องการ
         PROJECT_PATH = 'C:\\Users\\FackG\\Desktop\\test_cve_2024_23897'
-        DEPLOY_PATH = 'C:\\xampp\\htdocs\\test_cve'  // path ที่จะ deploy ไป
+        DEPLOY_PATH = 'C:\\xampp\\htdocs\\test_cve'
+        PORT = '8090'  // กำหนด port ที่ต้องการ
     }
     
     stages {
         stage('Clean') {
             steps {
-                // ทำความสะอาด workspace
                 cleanWs()
             }
         }
         
         stage('Checkout') {
             steps {
-                // ใช้โค้ดจาก local path แทนการดึงจาก Git
                 bat """
                     xcopy /s /e /y "${PROJECT_PATH}\\*" ".\\*"
                 """
             }
         }
         
-        stage('Backup') {
+        stage('Configure Port') {
             steps {
-                // สร้าง backup ถ้ามีไฟล์เดิมอยู่
+                // แก้ไขไฟล์ httpd.conf ของ XAMPP
                 bat """
-                    if exist "${DEPLOY_PATH}" (
-                        echo "Creating backup..."
-                        ren "${DEPLOY_PATH}" "test_cve_backup_%date:~-4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%"
-                    )
+                    echo "Configuring Apache port..."
+                    (
+                        echo Listen ${PORT}
+                        echo ^<VirtualHost *:${PORT}^>
+                        echo     DocumentRoot "${DEPLOY_PATH}"
+                        echo     ^<Directory "${DEPLOY_PATH}"^>
+                        echo         Options Indexes FollowSymLinks MultiViews
+                        echo         AllowOverride All
+                        echo         Require all granted
+                        echo     ^</Directory^>
+                        echo ^</VirtualHost^>
+                    ) > "C:\\xampp\\apache\\conf\\extra\\httpd-vhosts-${PORT}.conf"
+                    
+                    echo "Include conf/extra/httpd-vhosts-${PORT}.conf" >> "C:\\xampp\\apache\\conf\\httpd.conf"
+                """
+                
+                // รีสตาร์ท Apache
+                bat """
+                    net stop Apache2.4
+                    net start Apache2.4
                 """
             }
         }
         
         stage('Deploy') {
             steps {
-                // Deploy ไฟล์ใหม่
                 bat """
-                    echo "Deploying to ${DEPLOY_PATH}"
-                    if not exist "${DEPLOY_PATH}" (
-                        mkdir "${DEPLOY_PATH}"
+                    echo "Backing up existing deployment..."
+                    if exist "${DEPLOY_PATH}" (
+                        ren "${DEPLOY_PATH}" "test_cve_backup_%date:~-4%%date:~3,2%%date:~0,2%_%time:~0,2%%time:~3,2%"
                     )
+                    
+                    echo "Deploying to ${DEPLOY_PATH}"
+                    mkdir "${DEPLOY_PATH}"
                     xcopy /s /e /y ".\\*" "${DEPLOY_PATH}\\"
                 """
             }
@@ -51,18 +67,20 @@ pipeline {
         
         stage('Verify') {
             steps {
-                // ตรวจสอบว่าเว็บทำงาน
-                bat 'curl -f http://localhost/test_cve/index.html || echo "Warning: Could not verify deployment"'
+                // ตรวจสอบว่าเว็บทำงานบน port ที่กำหนด
+                bat """
+                    timeout /t 5 /nobreak
+                    curl -f http://localhost:${PORT}/index.html || echo "Warning: Could not verify deployment"
+                """
             }
         }
     }
     
     post {
         success {
-            echo 'Website deployed successfully!'
+            echo "Website deployed successfully! Access at http://localhost:${PORT}"
         }
         failure {
-            // ถ้าไม่สำเร็จให้ rollback
             bat """
                 echo "Deployment failed, attempting rollback..."
                 if exist "${DEPLOY_PATH}_backup_*" (
@@ -77,7 +95,6 @@ pipeline {
             error 'Deployment failed and rolled back to previous version.'
         }
         always {
-            echo 'Cleaning up workspace...'
             cleanWs()
         }
     }
