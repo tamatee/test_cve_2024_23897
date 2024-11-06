@@ -14,7 +14,7 @@ pipeline {
                 // ทำความสะอาด workspace
                 cleanWs()
                 // Clone โปรเจค
-                git 'https://github.com/yourusername/test-webapp.git'
+                git 'https://github.com/tamatee/test_cve_2024_23897.git'
             }
         }
         
