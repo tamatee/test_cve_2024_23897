@@ -1,0 +1,11 @@
+# .htaccess
+DirectoryIndex index.html
+Options -Indexes
+RewriteEngine On
+
+# ถ้าต้องการรองรับ Single Page Application (SPA)
+# RewriteBase /
+# RewriteRule ^index\.html$ - [L]
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule . /index.html [L]
