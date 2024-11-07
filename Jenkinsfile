@@ -2,9 +2,8 @@ pipeline {
     agent any
     
     environment {
-        // กำหนดพาธสำหรับ Windows
-        DEPLOY_PATH = 'C:\\xampp\\htdocs'  // สำหรับ XAMPP
-        // หรือ 'C:\\inetpub\\wwwroot'     // สำหรับ IIS
+        // กำหนดตัวแปรสำหรับ deploy
+        DEPLOY_PATH = '/var/www/html'  // เปลี่ยนตามที่ต้องการ
         PROJECT_NAME = 'test-webapp'
     }
     
@@ -13,38 +12,33 @@ pipeline {
             steps {
                 // ทำความสะอาด workspace
                 cleanWs()
-                // Clone โปรเจค
-                git 'https://github.com/tamatee/test_cve_2024_23897.git'
-            }
-        }
-        
-        stage('Backup') {
-            steps {
-                // สร้าง backup ใน Windows
-                bat """
-                    if exist "${DEPLOY_PATH}\\${PROJECT_NAME}" (
-                        rename "${DEPLOY_PATH}\\${PROJECT_NAME}" "${PROJECT_NAME}_backup_%date:~10,4%%date:~4,2%%date:~7,2%"
-                    )
-                """
+                // Clone โปรเจคจาก Git
+                git 'https://github.com/yourusername/test-webapp.git'
             }
         }
         
         stage('Deploy') {
             steps {
-                // Copy ไฟล์ไปยัง web server
-                bat """
-                    if not exist "${DEPLOY_PATH}\\${PROJECT_NAME}" mkdir "${DEPLOY_PATH}\\${PROJECT_NAME}"
-                    xcopy /s /y "*.html" "${DEPLOY_PATH}\\${PROJECT_NAME}\\"
-                    xcopy /s /y "*.css" "${DEPLOY_PATH}\\${PROJECT_NAME}\\"
-                    xcopy /s /y "*.js" "${DEPLOY_PATH}\\${PROJECT_NAME}\\"
+                // สร้าง backup ก่อน deploy
+                sh """
+                    if [ -d "${DEPLOY_PATH}/${PROJECT_NAME}" ]; then
+                        mv ${DEPLOY_PATH}/${PROJECT_NAME} ${DEPLOY_PATH}/${PROJECT_NAME}_backup_\$(date +%Y%m%d_%H%M%S)
+                    fi
+                """
+                
+                // Copy ไฟล์ไปยัง server
+                sh """
+                    mkdir -p ${DEPLOY_PATH}/${PROJECT_NAME}
+                    cp -r * ${DEPLOY_PATH}/${PROJECT_NAME}/
+                    chmod -R 755 ${DEPLOY_PATH}/${PROJECT_NAME}
                 """
             }
         }
         
         stage('Verify') {
             steps {
-                // ตรวจสอบการ deploy
-                bat 'curl -f http://localhost/%PROJECT_NAME%/index.html'
+                // ตรวจสอบว่า deploy สำเร็จ
+                sh "curl -f http://localhost/${PROJECT_NAME}/index.html"
             }
         }
     }
@@ -54,12 +48,12 @@ pipeline {
             echo 'Deployment successful!'
         }
         failure {
-            // Rollback ใน Windows
-            bat """
-                if exist "${DEPLOY_PATH}\\${PROJECT_NAME}_backup_*" (
-                    rmdir /s /q "${DEPLOY_PATH}\\${PROJECT_NAME}"
-                    rename "${DEPLOY_PATH}\\${PROJECT_NAME}_backup_*" "${PROJECT_NAME}"
-                )
+            // ถ้า deploy ไม่สำเร็จ ให้ rollback
+            sh """
+                if [ -d "${DEPLOY_PATH}/${PROJECT_NAME}_backup_*" ]; then
+                    rm -rf ${DEPLOY_PATH}/${PROJECT_NAME}
+                    mv ${DEPLOY_PATH}/${PROJECT_NAME}_backup_* ${DEPLOY_PATH}/${PROJECT_NAME}
+                fi
             """
             echo 'Deployment failed! Rolled back to previous version.'
         }
